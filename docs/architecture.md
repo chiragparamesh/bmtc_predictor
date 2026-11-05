@@ -43,15 +43,15 @@ flowchart TB
 
 ### 3.1 GTFS subset (bundled)
 
-The full feed is large. A Colab script filters it to the busy corridors (Silk Board, Outer Ring Road, Majestic) and writes compact JSON into `assets/data/gtfs_subset/`:
+The full feed is large (1.5M stop times). `ml/tools/build_network.py` filters it to 12 busy routes (500-D, V-500D, 500-A, 500-F, 600-F, MF-5, KIA-8, KIA-9, KBS-3A, 25-A, 90-E, 300-MV) and writes one compact file, `assets/data/network.json` (168 KB, ODbL 1.0):
 
-| File | Contents |
+| Key | Contents |
 |---|---|
-| `stops.json` | `id`, `name`, `name_kn`, `lat`, `lon` |
-| `routes.json` | `id`, `short_name`, `long_name` |
-| `trips.json` | `trip_id`, `route_id`, `direction`, `service_days` |
-| `stop_times.json` | `trip_id`, `stop_id`, `sequence`, `scheduled_time` |
-| `edges.json` | consecutive-stop edges for the graph model |
+| `routes` | `id`, `short`, `long`, `vajra`, `corridors` (orr, silk_board, majestic, airport) |
+| `stops` | `id`, `name`, `desc` (with direction), `kn` (Kannada), `lat`, `lon` |
+| `patterns` | per route+direction stop sequence; `profiles` = seconds-from-start per stop (BMTC uses slower running times at peak); `trips` = [start second, profile index] |
+
+Patterns + profiles compress 80k stop-time rows into about 170 KB. Consecutive stops in a pattern are the edges for the future graph model.
 
 ### 3.2 Weather
 
@@ -71,9 +71,11 @@ GTFS is a schedule, not real arrivals. Ground truth comes from riders tapping **
 
 Features: hour-of-day, day-of-week, holiday flag, stop sequence index, distance from origin, corridor, rain intensity, recent reported delays upstream (for the graph model).
 
-**Export path:** XGBoost has no direct TFLite export. Options: (a) distill the XGBoost predictions into a small Keras MLP and export that, (b) export trees to JSON and evaluate them in Dart. The GNN is exported as a fixed-graph model (adjacency baked in) through PyTorch → ONNX → TFLite or `ai-edge-torch`. The app talks only to a `DelayPredictor` interface, so the model can be swapped.
+**Shipped (v0):** an 11 → 24 → 24 → 2 MLP trained with pinball loss (q50, q90 = q50 + softplus), exported as JSON weights and evaluated in plain Dart, so the same model runs on Android and in Chrome. Labels come from a documented traffic prior (ml/README.md) because no public arrival data exists. Test metrics on the prior: q50 MAE 2.36 min vs 5.76 (schedule) and 3.66 (hour median); q90 coverage 89.7%.
 
-**Web preview rule:** TFLite does not run on Flutter web; Chrome uses a heuristic `DelayPredictor` implementation.
+**On-device learning:** `ModelDelayPredictor` shifts each route's predictions by `mean(actual − predicted) × n/(n+3)` from the rider's reports, so a handful of reports already help, without retraining.
+
+**Export path later:** XGBoost has no direct TFLite export, so either distil it into the MLP or export trees to JSON and evaluate them in Dart. The GNN is exported as a fixed-graph `.tflite` (Android) behind the same `DelayPredictor` interface, with the MLP as the web fallback.
 
 ## 5. App layers
 
@@ -92,10 +94,10 @@ lib/features/
 | Phase | Scope |
 |---|---|
 | 0 ✅ | Skeleton, theme, router, CI APK build |
-| 1 | Colab: GTFS subset → bundled JSON; stop search and scheduled times |
-| 2 | Heuristic predictor + rain mode; "bus arrived" reports stored locally |
+| 1 ✅ | GTFS subset → bundled JSON; stop search (EN/ಕನ್ನಡ) and scheduled times |
+| 2 ✅ | Prior-trained MLP (q50/q90) + rain mode; "bus arrived" reports stored locally, on-device correction, CSV export |
 | 3 | XGBoost baseline in Colab; distilled TFLite model on-device |
-| 4 | Quantile predictions and "best time to leave" |
+| 4 | "Best time to leave" (quantiles ✅ already built) |
 | 5 | Opt-in report upload; retraining loop |
 | 6 | GNN over the stop network; crowd levels; Kannada / English UI |
 

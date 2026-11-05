@@ -43,16 +43,29 @@ My Windows laptop has low RAM: Android Studio and the Android emulator froze it.
 - `lib/core/theme/` — theme and colors. `lib/core/router/` — go_router routes.
 - `lib/core/services/` — platform/service interfaces. `lib/core/utils/` — constants, helpers. `lib/core/widgets/` — shared widgets.
 - `lib/features/<feature>/{data,domain,presentation}/` — one folder per feature:
-  - `lib/features/stop_search/` — Search stops on the bundled busy routes
-  - `lib/features/schedule/` — Scheduled times from the GTFS subset
-  - `lib/features/prediction/` — Predicted delay from the Colab-exported model
+  - `lib/features/stop_search/` — Home: stop search (EN/Kannada), recent + popular stops
+  - `lib/features/schedule/` — `Network` (assets/data/network.json): arrivals per stop, trip timelines; stop + trip screens
+  - `lib/features/prediction/` — `DelayModel` (Dart MLP from assets/models/delay_model.json), `delayFeatures()`, `ModelDelayPredictor` (+ report correction)
   - `lib/features/rain_mode/` — Rain mode toggle feeding the model
   - `lib/features/arrival_report/` — "Bus arrived" report button, stored locally
-- `ml/` — Colab workflow notes. Only exported `.tflite` files are committed, in `assets/models/`.
+- `ml/` — `train_delay_model.py` + Colab notebook. Exports `assets/models/delay_model.json` (JSON MLP weights, not .tflite: see ml/README.md).
 - `docs/architecture.md` — full system design and roadmap. Keep it updated.
 - `.github/workflows/build-apk.yml` — the only place APKs are built.
 
 ## Status
 
-Skeleton only: folders, theme, router, placeholder home screen, CI. No features built yet.
-Update the features table in README.md (Built / Planned) as features land.
+Phase 1 built (see README features table): 12-route GTFS subset, stop search EN/ಕನ್ನಡ, scheduled + expected +
+"90% by" times, trip timeline, rain mode, "Bus arrived" reports with on-device correction, reports scorecard + CSV export.
+Model v0 is trained on a documented traffic prior (no public arrival data exists); README says so.
+Next: live Open-Meteo rain, collect reports, XGBoost baseline, then GNN (docs/architecture.md).
+
+## Conventions
+
+- Times: IST wall-clock DateTimes stored as UTC (`core/utils/ist_time.dart`); `clockProvider` gives "now" (override in tests).
+- Feature contract: `delayFeatures()` in Dart MUST match `features()` in ml/train_delay_model.py (same order, scaling).
+  After retraining, `flutter test` checks Dart/Python parity using `checks` in delay_model.json.
+- Rebuild the subset: `python ml/tools/build_network.py <unzipped gtfs dir> assets/data/network.json` (`ml/tools/build_network.py`; unzip the GTFS from Vonter/bmtc-gtfs first).
+- State: Riverpod; prefs-backed settings use `BoolSetting` (core/services/settings.dart).
+- Widget tests: `rootBundle.clear()` in setUp and the `_settle` helper (assets load on a background isolate).
+- Data licence: network.json is ODbL 1.0 (Vonter/bmtc-gtfs); keep the attribution in README.
+- Run `flutter analyze` and `flutter test` before every push. Update the README features table as features land.
