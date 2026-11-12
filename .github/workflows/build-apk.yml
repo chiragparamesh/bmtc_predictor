@@ -22,9 +22,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Pinned to the version on the laptop (D:\Projects\_tools\flutter) so CI and local
+      # builds match. Upgrade both together (and bump AGP if Flutter asks).
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: 3.47.9
           cache: true
 
       - name: Install dependencies
